@@ -32,34 +32,36 @@ def embed(text: str) -> list[float]:
 def spin_agent(clinic_id: str):
     """Create a new Railway service that runs the pre-built agent image."""
 
-    # make the name unique on every launch
     service_name = f"dental-agent-{clinic_id}-{int(time.time())}"
 
     gql = """
-    mutation ($input: CreateServiceDeploymentInput!) {
-      createServiceDeployment(input: $input) { service { id name } }
+    mutation ($input: CreateServiceInput!) {
+      createService(input: $input) {
+        id name
+      }
     }"""
 
     vars = {
       "input": {
         "projectId": PROJECT_ID,
-        "serviceName": service_name,
+        "name":      service_name,
 
-        # tell Railway to start a container FROM an existing image
+        # --- tell Railway to launch from an existing container image ----
         "source": {
-          "type": "image",
+          "type":  "image",
           "image": {
-            "image": GHCR_IMAGE,                 # ghcr.io/you/dental-agent:latest
-            "restartPolicy": "UNLESS_STOPPED"    # or "ON_FAILURE"
+            "image": GHCR_IMAGE,               # ghcr.io/...:latest
+            "restartPolicy": "UNLESS_STOPPED"
           }
         },
 
+        # --- environment variables that the new container should receive
         "envVars": [
           {"key": "CLINIC_ID",            "value": clinic_id},
           {"key": "SUPABASE_URL",         "value": SB_URL},
           {"key": "SUPABASE_SERVICE_KEY", "value": SB_KEY},
           {"key": "OPENAI_KEY",           "value": OPENAI_KEY},
-          # add PG_*, LIVEKIT_*, TWILIO_* here if needed:
+          # add PG_*, LIVEKIT_*, TWILIO_* if needed:
           # {"key": "PG_HOST", "value": os.environ["PG_HOST"]},
         ]
       }
@@ -73,10 +75,9 @@ def spin_agent(clinic_id: str):
     )
 
     if r.status_code >= 400:
-        # print full error payload so you can see exactly why it failed
         print("🚨 Railway GraphQL error", r.status_code, r.text, flush=True)
 
-    r.raise_for_status()   # still raise if not 2xx so Flask returns 500
+    r.raise_for_status()
     
     
 # ─── Route ────────────────────────────────────────────────────────────────
