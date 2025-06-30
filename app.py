@@ -15,6 +15,7 @@ OPENAI_KEY  = os.environ["OPENAI_KEY"]
 GHCR_IMAGE  = os.environ["GHCR_IMAGE"]
 RW_TOKEN    = os.environ["RAILWAY_TOKEN"]
 PROJECT_ID  = os.environ["RAILWAY_PROJECT_ID"]
+ENV_ID     = os.environ["RAILWAY_ENVIRONMENT_ID"] 
 
 # ─── Clients ──────────────────────────────────────────────────────────────
 supabase = create_client(SB_URL, SB_KEY)
@@ -30,39 +31,33 @@ def embed(text: str) -> list[float]:
     return resp.data[0].embedding
 
 def spin_agent(clinic_id: str):
-    """Create a new Railway service that runs the pre-built agent image."""
-
     service_name = f"dental-agent-{clinic_id}-{int(time.time())}"
 
     gql = """
     mutation ($input: CreateServiceInput!) {
-      createService(input: $input) {
-        id name
-      }
+      createService(input: $input) { id name }
     }"""
 
     vars = {
       "input": {
         "projectId": PROJECT_ID,
-        "name":      service_name,
+        "environmentId": ENV_ID,        # ← REQUIRED
+        "name": service_name,
 
-        # --- tell Railway to launch from an existing container image ----
         "source": {
-          "type":  "image",
+          "type": "image",
           "image": {
-            "image": GHCR_IMAGE,               # ghcr.io/...:latest
+            "image": GHCR_IMAGE,
             "restartPolicy": "UNLESS_STOPPED"
           }
         },
 
-        # --- environment variables that the new container should receive
         "envVars": [
           {"key": "CLINIC_ID",            "value": clinic_id},
           {"key": "SUPABASE_URL",         "value": SB_URL},
           {"key": "SUPABASE_SERVICE_KEY", "value": SB_KEY},
           {"key": "OPENAI_KEY",           "value": OPENAI_KEY},
-          # add PG_*, LIVEKIT_*, TWILIO_* if needed:
-          # {"key": "PG_HOST", "value": os.environ["PG_HOST"]},
+          # add PG_*, LIVEKIT_*, TWILIO_* if needed
         ]
       }
     }
@@ -73,12 +68,10 @@ def spin_agent(clinic_id: str):
         json={"query": gql, "variables": vars},
         headers=headers,
     )
-
     if r.status_code >= 400:
         print("🚨 Railway GraphQL error", r.status_code, r.text, flush=True)
-
     r.raise_for_status()
-    
+   
     
 # ─── Route ────────────────────────────────────────────────────────────────
 @app.post("/provision")
