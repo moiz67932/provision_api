@@ -10,12 +10,12 @@ app = Flask(__name__)
 CORS(app, origins="*")               # <-- allows localhost Wizard during dev
 
 # ─── Env ──────────────────────────────────────────────────────────────────
-SB_URL      = os.environ["SUPABASE_URL"].split(';')[0].strip()
 SB_KEY      = os.environ["SUPABASE_SERVICE_KEY"]
 OPENAI_KEY  = os.environ["OPENAI_KEY"]
 GHCR_IMAGE  = os.environ["GHCR_IMAGE"]
 RW_TOKEN    = os.environ["RAILWAY_TOKEN"]
 PROJECT_ID  = os.environ["RAILWAY_PROJECT_ID"]
+SB_URL      = os.environ["SUPABASE_URL"].split(';')[0].strip()
 ENV_ID     = os.environ["RAILWAY_ENVIRONMENT_ID"] 
 # SB_URL = SB_URL.strip().rstrip(';')
 
@@ -63,8 +63,8 @@ def spin_agent(clinic_id: str):
         # (3) *top-level* environment variables for the container
         "envVars": [
           { "key": "CLINIC_ID",            "value": clinic_id },
-          { "key": "SUPABASE_URL",         "value": SB_URL },
           { "key": "SUPABASE_SERVICE_KEY", "value": SB_KEY },
+          { "key": "SUPABASE_URL",         "value": SB_URL },
           { "key": "OPENAI_KEY",           "value": OPENAI_KEY },
           # add PG_*, LIVEKIT_*, TWILIO_* here if needed
         ]
