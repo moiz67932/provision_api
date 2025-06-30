@@ -3,6 +3,7 @@ from flask import Flask, request, jsonify
 from flask_cors import CORS
 from supabase import create_client
 from openai import OpenAI
+import time
 
 app = Flask(__name__)
 CORS(app, origins="*")               # <-- allows localhost Wizard during dev
@@ -50,11 +51,17 @@ def spin_agent(clinic_id: str):
       }
     }
     headers = {"Authorization": f"Bearer {RW_TOKEN}"}
-    requests.post(
+    r = requests.post(
         "https://backboard.railway.app/graphql/v2",
         json={"query": gql, "variables": vars},
         headers=headers,
-    ).raise_for_status()
+    )
+
+    if r.status_code >= 400:
+        # print full error to logs for easy debugging
+        print("🚨 Railway GraphQL error", r.status_code, r.text, flush=True)
+
+    r.raise_for_status()      # will still raise if non-2xx after logging
 
 # ─── Route ────────────────────────────────────────────────────────────────
 @app.post("/provision")
