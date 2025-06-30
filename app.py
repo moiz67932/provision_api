@@ -3,7 +3,8 @@ from flask import Flask, request, jsonify
 from flask_cors import CORS
 from supabase import create_client
 from openai import OpenAI
-import time
+import time, sys
+
 
 app = Flask(__name__)
 CORS(app, origins="*")               # <-- allows localhost Wizard during dev
@@ -35,43 +36,51 @@ def spin_agent(clinic_id: str):
 
     gql = """
     mutation ($input: CreateServiceInput!) {
-      createService(input: $input) { id name }
-    }"""
+      createService(input: $input) {
+        id
+        name
+      }
+    }
+    """
 
     vars = {
       "input": {
         "projectId": PROJECT_ID,
-        "environmentId": ENV_ID,        # ← REQUIRED
         "name": service_name,
 
+        # 1 ─ WHICH environment(s) will this service live in
+        "serviceEnvironments": [{
+          "environmentId": ENV_ID,
+          "variables": [
+            {"key": "CLINIC_ID",            "value": clinic_id},
+            {"key": "SUPABASE_URL",         "value": SB_URL},
+            {"key": "SUPABASE_SERVICE_KEY", "value": SB_KEY},
+            {"key": "OPENAI_KEY",           "value": OPENAI_KEY},
+            # add PG_*, LIVEKIT_*, TWILIO_* here as needed
+          ]
+        }],
+
+        # 2 ─ How the code is obtained and run
         "source": {
           "type": "image",
           "image": {
             "image": GHCR_IMAGE,
             "restartPolicy": "UNLESS_STOPPED"
           }
-        },
-
-        "envVars": [
-          {"key": "CLINIC_ID",            "value": clinic_id},
-          {"key": "SUPABASE_URL",         "value": SB_URL},
-          {"key": "SUPABASE_SERVICE_KEY", "value": SB_KEY},
-          {"key": "OPENAI_KEY",           "value": OPENAI_KEY},
-          # add PG_*, LIVEKIT_*, TWILIO_* if needed
-        ]
+        }
       }
     }
 
     headers = {"Authorization": f"Bearer {RW_TOKEN}"}
-    r = requests.post(
+    resp = requests.post(
         "https://backboard.railway.app/graphql/v2",
         json={"query": gql, "variables": vars},
-        headers=headers,
+        headers=headers
     )
-    if r.status_code >= 400:
-        print("🚨 Railway GraphQL error", r.status_code, r.text, flush=True)
-    r.raise_for_status()
-   
+
+    if resp.status_code >= 400:
+        print("🚨 Railway GraphQL 400 →", resp.text, file=sys.stderr, flush=True)
+    resp.raise_for_status()
     
 # ─── Route ────────────────────────────────────────────────────────────────
 @app.post("/provision")
