@@ -10,14 +10,14 @@ app = Flask(__name__)
 CORS(app, origins="*")               # <-- allows localhost Wizard during dev
 
 # ─── Env ──────────────────────────────────────────────────────────────────
-SB_URL      = os.environ["SUPABASE_URL"]
+SB_URL      = os.environ["SUPABASE_URL"].split(';')[0].strip()
 SB_KEY      = os.environ["SUPABASE_SERVICE_KEY"]
 OPENAI_KEY  = os.environ["OPENAI_KEY"]
 GHCR_IMAGE  = os.environ["GHCR_IMAGE"]
 RW_TOKEN    = os.environ["RAILWAY_TOKEN"]
 PROJECT_ID  = os.environ["RAILWAY_PROJECT_ID"]
 ENV_ID     = os.environ["RAILWAY_ENVIRONMENT_ID"] 
-SB_URL = SB_URL.strip().rstrip(';')
+# SB_URL = SB_URL.strip().rstrip(';')
 
 # ─── Clients ──────────────────────────────────────────────────────────────
 supabase = create_client(SB_URL, SB_KEY)
