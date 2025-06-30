@@ -17,6 +17,7 @@ GHCR_IMAGE  = os.environ["GHCR_IMAGE"]
 RW_TOKEN    = os.environ["RAILWAY_TOKEN"]
 PROJECT_ID  = os.environ["RAILWAY_PROJECT_ID"]
 ENV_ID     = os.environ["RAILWAY_ENVIRONMENT_ID"] 
+SB_URL = SB_URL.strip().rstrip(';')
 
 # ─── Clients ──────────────────────────────────────────────────────────────
 supabase = create_client(SB_URL, SB_KEY)
