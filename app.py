@@ -5,19 +5,18 @@ from supabase import create_client
 from openai import OpenAI
 import time, sys
 
-
 app = Flask(__name__)
-CORS(app, origins="*")               # <-- allows localhost Wizard during dev
+CORS(app, origins="*")
 
 # ─── Env ──────────────────────────────────────────────────────────────────
 SB_KEY      = os.environ["SUPABASE_SERVICE_KEY"]
 OPENAI_KEY  = os.environ["OPENAI_KEY"]
 GHCR_IMAGE  = os.environ["GHCR_IMAGE"]
-RW_TOKEN    = os.environ["RAILWAY_TOKEN"]
-PROJECT_ID  = os.environ["RAILWAY_PROJECT_ID"]
 SB_URL      = os.environ["SUPABASE_URL"].split(';')[0].strip()
-ENV_ID     = os.environ["RAILWAY_ENVIRONMENT_ID"] 
-# SB_URL = SB_URL.strip().rstrip(';')
+
+FLY_TOKEN   = os.environ["FLY_API_TOKEN"]
+FLY_APP     = os.environ["FLY_APP"]
+FLY_REGION  = os.getenv("FLY_REGION", "iad")
 
 # ─── Clients ──────────────────────────────────────────────────────────────
 supabase = create_client(SB_URL, SB_KEY)
@@ -33,75 +32,55 @@ def embed(text: str) -> list[float]:
     return resp.data[0].embedding
 
 def spin_agent(clinic_id: str):
-    service_name = f"dental-agent-{clinic_id}-{int(time.time())}"
+    name = f"dental-agent-{clinic_id}-{int(time.time())}"
 
-    gql = """
-    mutation ($input: CreateServiceInput!) {
-      createService(input: $input) { id name }
-    }
-    """
-
-    vars = {
-      "input": {
-        "projectId": PROJECT_ID,
-        "name":      service_name,
-
-        # (1) environment(s) the service will run in
-        "serviceEnvironments": [
-          { "environmentId": ENV_ID }          # nothing else here
-        ],
-
-        # (2) how to run the code – a pre-built container image
-        "source": {
-          "type": "image",
-          "image": {
+    payload = {
+        "name": name,
+        "region": FLY_REGION,
+        "config": {
             "image": GHCR_IMAGE,
-            "restartPolicy": "UNLESS_STOPPED"
-          }
-        },
-
-        # (3) *top-level* environment variables for the container
-        "envVars": [
-          { "key": "CLINIC_ID",            "value": clinic_id },
-          { "key": "SUPABASE_SERVICE_KEY", "value": SB_KEY },
-          { "key": "SUPABASE_URL",         "value": SB_URL },
-          { "key": "OPENAI_KEY",           "value": OPENAI_KEY },
-          # add PG_*, LIVEKIT_*, TWILIO_* here if needed
-        ]
-      }
+            "env": {
+                "CLINIC_ID": clinic_id,
+                "SUPABASE_URL": SB_URL,
+                "SUPABASE_SERVICE_KEY": SB_KEY,
+                "OPENAI_KEY": OPENAI_KEY,
+                "LIVEKIT_URL": os.environ["LIVEKIT_URL"],
+                "LIVEKIT_API_KEY": os.environ["LIVEKIT_API_KEY"],
+                "LIVEKIT_API_SECRET": os.environ["LIVEKIT_API_SECRET"],
+                "TWILIO_ACCOUNT_SID": os.environ["TWILIO_ACCOUNT_SID"],
+                "TWILIO_AUTH_TOKEN": os.environ["TWILIO_AUTH_TOKEN"],
+            },
+            "restart": { "policy": "on-failure" }
+        }
     }
 
-    headers = { "Authorization": f"Bearer {RW_TOKEN}" }
-    resp = requests.post(
-        "https://backboard.railway.app/graphql/v2",
-        json={ "query": gql, "variables": vars },
-        headers=headers,
+    r = requests.post(
+        f"https://api.machines.dev/v1/apps/{FLY_APP}/machines",
+        headers={
+            "Authorization": f"Bearer {FLY_TOKEN}",
+            "Content-Type":  "application/json"
+        },
+        json=payload, timeout=30
     )
+    if r.status_code >= 400:
+        print("Fly error", r.status_code, r.text, flush=True)
+    r.raise_for_status()
 
-    if resp.status_code >= 400:
-        # full payload & error for easy debugging
-        print("⚠️  Payload sent to Backboard:\n",
-              json.dumps(vars, indent=2),
-              "\n🚨 Railway 400:\n", resp.text,
-              file=sys.stderr, flush=True)
-
-    resp.raise_for_status()
-      
 # ─── Route ────────────────────────────────────────────────────────────────
 @app.post("/provision")
 def provision():
     data = request.get_json(force=True)
-    cid  = data["clinic_id"]          # ← still receives the *integer* id
+    cid  = data["clinic_id"]
 
     # 1 ▸ fetch the wizard row
     row = (supabase
-           .from_("dental-clinic-data")      # ← your actual table name
+           .from_("dental-clinic-data")
            .select("*")
-           .eq("id", cid)                    # id is still int
+           .eq("id", cid)
            .single()
            .execute()).data
 
-    # 2 ▸ embed the concatenated profile
+    # 2 ▸ embed the profile into a vector
     blob = " ".join([
         row.get("name", ""),
         ", ".join(row.get("services", [])),
@@ -110,16 +89,17 @@ def provision():
     ])
     vec = embed(blob)
 
-    # 3 ▸ store the vector & mark as live
+    # 3 ▸ update the vector and mark as live
     supabase.from_("dental-clinic-data").update({
         "vector": vec,
         "status": "live"
     }).eq("id", cid).execute()
 
-    # 4 ▸ spin the agent container
-    spin_agent(str(cid))             # service name gets the int id
+    # 4 ▸ spin the Fly.io agent
+    spin_agent(str(cid))
 
     return jsonify({"ok": True}), 202
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=8000)
+    port = int(os.environ.get("PORT", 8000))
+    app.run(host="0.0.0.0", port=port)
