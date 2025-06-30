@@ -48,8 +48,8 @@ def spin_agent(clinic_id: str):
 def provision():
     data = request.get_json(force=True)
     cid  = data["clinic_id"]
-    row  = (supabase.from_("clinics")
-            .select("*").eq("id", cid).single().execute()).data
+    row = (supabase.from_("dental-clinic-data")
+       .select("*").eq("clinic_id", cid).single().execute()).data
     blob = " ".join([
         row.get("name",""), ", ".join(row.get("services",[])),
         ", ".join(row.get("insurances",[])), row.get("policies","")
