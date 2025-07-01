@@ -1,26 +1,29 @@
-import os, requests, json
+import os
+import requests
+import json
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 from supabase import create_client
 from openai import OpenAI
-import time, sys
+import time
+import sys
 
 app = Flask(__name__)
 CORS(app, origins="*")
 
 # ─── Env ──────────────────────────────────────────────────────────────────
-SB_KEY      = os.environ["SUPABASE_SERVICE_KEY"]
-OPENAI_KEY  = os.environ["OPENAI_KEY"]
-GHCR_IMAGE  = os.environ["GHCR_IMAGE"]
-SB_URL      = os.environ["SUPABASE_URL"].split(';')[0].strip()
+SB_KEY = os.environ["SUPABASE_SERVICE_KEY"]
+OPENAI_KEY = os.environ["OPENAI_KEY"]
+GHCR_IMAGE = os.environ["GHCR_IMAGE"]
+SB_URL = os.environ["SUPABASE_URL"].split(';')[0].strip()
 
-FLY_TOKEN   = os.environ["FLY_API_TOKEN"]
-FLY_APP     = os.environ["FLY_APP"]
-FLY_REGION  = os.getenv("FLY_REGION", "iad")
+FLY_TOKEN = os.environ["FLY_API_TOKEN"]
+FLY_APP = os.environ["FLY_APP"]
+FLY_REGION = os.getenv("FLY_REGION", "iad")
 
 # ─── Clients ──────────────────────────────────────────────────────────────
 supabase = create_client(SB_URL, SB_KEY)
-ai       = OpenAI(api_key=OPENAI_KEY)
+ai = OpenAI(api_key=OPENAI_KEY)
 
 # ─── Helpers ──────────────────────────────────────────────────────────────
 def embed(text: str) -> list[float]:
@@ -33,12 +36,12 @@ def embed(text: str) -> list[float]:
 
 def spin_agent(clinic_id: str):
     name = f"dental-agent-{clinic_id}-{int(time.time())}"
-
     payload = {
         "name": name,
         "region": FLY_REGION,
         "config": {
             "image": GHCR_IMAGE,
+            "cmd": ["python", "agent.py", "dev"],
             "env": {
                 "CLINIC_ID": clinic_id,
                 "SUPABASE_URL": SB_URL,
@@ -50,15 +53,15 @@ def spin_agent(clinic_id: str):
                 "TWILIO_ACCOUNT_SID": os.environ["TWILIO_ACCOUNT_SID"],
                 "TWILIO_AUTH_TOKEN": os.environ["TWILIO_AUTH_TOKEN"],
             },
-            "restart": { "policy": "on-failure" }
+            "restart": { "policy": "on-failure" },
+            "guest": { "cpu_kind": "shared", "cpus": 1, "memory_mb": 1024 }
         }
     }
-
     r = requests.post(
         f"https://api.machines.dev/v1/apps/{FLY_APP}/machines",
         headers={
             "Authorization": f"Bearer {FLY_TOKEN}",
-            "Content-Type":  "application/json"
+            "Content-Type": "application/json"
         },
         json=payload, timeout=30
     )
@@ -70,22 +73,24 @@ def spin_agent(clinic_id: str):
 @app.post("/provision")
 def provision():
     data = request.get_json(force=True)
-    cid  = data["clinic_id"]
+    cid = data["clinic_id"]
 
     # 1 ▸ fetch the wizard row
-    row = (supabase
-           .from_("dental-clinic-data")
-           .select("*")
-           .eq("id", cid)
-           .single()
-           .execute()).data
+    row = (
+        supabase
+        .from_("dental-clinic-data")
+        .select("*")
+        .eq("id", cid)
+        .single()
+        .execute()
+    ).data
 
     # 2 ▸ embed the profile into a vector
     blob = " ".join([
         row.get("name", ""),
         ", ".join(row.get("services", [])),
         ", ".join(row.get("insurances", [])),
-        row.get("policies", ""),
+        row.get("policies", "")
     ])
     vec = embed(blob)
 
@@ -101,5 +106,5 @@ def provision():
     return jsonify({"ok": True}), 202
 
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 8000))
-    app.run(host="0.0.0.0", port=port)
+    port = int(os.environ.get("PORT", 8080))
+    app.run(host="0.0.0.0", port=8080)
